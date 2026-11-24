@@ -17,6 +17,9 @@ importers:
       vitest:
         specifier: ^5.1.1
         version: 5.1.1(vite@8.3.8(esbuild@0.28.2))
+      zustand:
+        specifier: ^5.1.0
+        version: 5.1.0
 
 packages:
 
@@ -983,6 +986,24 @@ packages:
     engines: {node: '>=20.11'}
     hasBin: true
 
+  zustand@5.1.0:
+    resolution: {integrity: sha512-ciJZlP48M1PTQbVQq81CGVFxHTLpZNrFjKqwjtCU34AWuXTZT/jrF3p9+fI84Cf1eSCMLapxqBy/SNTfwOBuqA==}
+    engines: {node: '>=12.20.0'}
+    peerDependencies:
+      '@types/react': '>=18.0.0'
+      immer: '>=9.0.6'
+      react: '>=18.0.0'
+      use-sync-external-store: '>=1.2.0'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      immer:
+        optional: true
+      react:
+        optional: true
+      use-sync-external-store:
+        optional: true
+
 snapshots:
 
   '@emnapi/core@2.0.0-beta.2':
@@ -1685,3 +1706,5 @@ snapshots:
       - msw
 
   why-is-node-running@3.2.1: {}
+
+  zustand@5.1.0: {}
