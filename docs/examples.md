@@ -48,4 +48,4 @@ Pontos que o teste confirma:
 
 ## Zod e `exactOptionalPropertyTypes`
 
-Com `exactOptionalPropertyTypes` ligado (como neste repositório), `z.string().optional()` gera `role?: string | undefined`. Esse tipo não é atribuível a uma interface `role?: string`, e por isso o resultado de `parseStructureSnapshot` não entra em `createEntityStructureStore<Party, Shareholding>`. Use `z.string().exactOptional()` (disponível no Zod 4 instalado aqui, 4.6), como em `examples/corporate-zod.ts`, ou declare a interface com `role?: string | undefined`.
+Com `exactOptionalPropertyTypes` ligado (como neste repositório), `z.string().optional()` gera `role?: string | undefined`. Esse tipo não é atribuível a uma interface `role?: string`, e por isso o resultado de `parseStructureSnapshot` não entra em `createEntityStructureStore<Party, Shareholding>`. Use `z.string().exactOptional()` (disponível a partir do Zod 4.3.0, o mínimo do peer), como em `examples/corporate-zod.ts`, ou declare a interface com `role?: string | undefined`.
