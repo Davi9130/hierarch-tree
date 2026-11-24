@@ -2,7 +2,7 @@
  * TES-29 — large/deep structures (no stack overflow) and probes for the
  * findings reported on the issue.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   addNode,
   createEmptyState,
@@ -107,30 +107,41 @@ describe("scale: 10k siblings under one parent", () => {
 // ---------------------------------------------------------------------------
 
 describe("findings", () => {
-  it.fails("F1: mutating a registered entity object in place bypasses rules and the registry key", () => {
+  it("F1: a registered entity or relationship cannot be mutated in place (frozen state)", () => {
     const cfg = config();
     const s = sample(cfg);
     const data = s.entities["L1"]?.data;
     if (data === undefined) throw new Error("fixture");
-    // The core stores the consumer object by reference and never freezes it.
-    // An in-place mutation changes the "immutable" state without any validation:
-    (data as { kind: string }).kind = "group"; // leaf(X) → group(L1) is denied by the rules
-    expect(validateStructure(s, cfg).valid).toBe(true); // fails: the state is now invalid
+    // The state is frozen: an in-place mutation throws instead of bypassing the rules.
+    expect(() => {
+      (data as { kind: string }).kind = "group"; // leaf(X) → group(L1) would be denied by the rules
+    }).toThrow(TypeError);
+    expect(() => {
+      (s.nodes["n2"]?.relationship as { share: number }).share = 99;
+    }).toThrow(TypeError);
+    expect(() => {
+      (s.nodes["n1"]?.childIds as string[]).push("n6");
+    }).toThrow(TypeError);
+    expect(Object.isFrozen(s) && Object.isFrozen(s.entities) && Object.isFrozen(s.nodes)).toBe(true);
+    expect(validateStructure(s, cfg).valid).toBe(true);
   });
 
-  it("F1 (evidence): the same in-place mutation also desynchronizes the registry key", () => {
+  it("F1: mutating the object the consumer passed in does not reach the state (shallow copy)", () => {
     const cfg = config();
     const entity = leaf("K");
+    const relationship = rel(10);
     const structure = createEntityStructure(cfg);
-    unwrap(structure.addNode({ entity, relationship: rel(0) }));
+    unwrap(structure.addNode({ entity, relationship }));
     const before = structure.getState();
-    entity.code = "K2";
-    expect(structure.getState()).toBe(before); // "unchanged" by reference...
-    expect(structure.findEntity("K")?.data.code).toBe("K2"); // ...but its content changed
-    expect(codes(structure.validateStructure().errors)).toEqual(["IDENTITY_MISMATCH"]);
+    entity.code = "K2"; // the consumer keeps a mutable object
+    relationship.share = 99;
+    expect(structure.getState()).toBe(before);
+    expect(structure.findEntity("K")?.data.code).toBe("K");
+    expect(Object.values(structure.getState().nodes)[0]?.relationship.share).toBe(10);
+    expect(structure.validateStructure().valid).toBe(true);
   });
 
-  it.fails("F2: declarative matchers ignore inherited/getter properties that identity resolution does read", () => {
+  it("F2: declarative matchers read inherited/getter properties the same way identity resolution does", () => {
     class Member {
       constructor(private readonly raw: { code: string; kind: "group" | "leaf" }) {}
       get code(): string {
@@ -144,7 +155,7 @@ describe("findings", () => {
     let s = createEmptyState<Member, { share: number }>();
     s = unwrap(addNode(s, { entity: new Member({ code: "G", kind: "group" }), relationship: rel(0) }, cfg)).state;
     expect(s.entities["G"]).toBeDefined(); // identity read through the getter works
-    // `group-any` should match parent.kind === "group", but `matches` uses hasOwn → no rule → restrictive deny.
+    // `group-any` matches parent.kind === "group" read through the getter.
     const added = addNode(s, { entity: new Member({ code: "L", kind: "leaf" }), parentId: "n1", relationship: rel(0) }, cfg);
     expect(added.ok).toBe(true);
   });
@@ -156,19 +167,36 @@ describe("findings", () => {
     expect(getAllEntities(s).map((record) => record.key)).toEqual(["2", "10", "b", "a"]);
   });
 
-  it.fails("F4: a throwing subscriber makes a successful mutation look like a failure to the caller", () => {
-    const structure = createEntityStructure(config());
+  it("F4: a throwing subscriber does not turn a successful mutation into an exception", () => {
+    const reported: unknown[] = [];
+    const structure = createEntityStructure(config(), { onListenerError: (error) => reported.push(error) });
     structure.subscribe(() => {
       throw new Error("listener bug");
     });
-    let result: ReturnType<typeof structure.addNode> | undefined;
-    try {
-      result = structure.addNode({ entity: group("A"), relationship: rel(0) });
-    } catch {
-      // the caller gets an exception, but the state WAS committed
-    }
+    let later = 0;
+    structure.subscribe(() => {
+      later += 1;
+    });
+    const result = structure.addNode({ entity: group("A"), relationship: rel(0) }); // does not throw
     expect(structure.getState().rootIds).toHaveLength(1);
-    expect(result?.ok).toBe(true); // fails: the caller never receives the result
+    expect(result.ok).toBe(true);
+    expect(later).toBe(1); // the next listener still ran
+    expect(reported).toHaveLength(1);
+  });
+
+  it("F4: without onListenerError the listener error goes to console.error", () => {
+    const sink = (globalThis as unknown as { console: { error: (...data: unknown[]) => void } }).console;
+    const spy = vi.spyOn(sink, "error").mockImplementation(() => undefined);
+    try {
+      const structure = createEntityStructure(config());
+      structure.subscribe(() => {
+        throw new Error("listener bug");
+      });
+      expect(structure.addNode({ entity: group("A"), relationship: rel(0) }).ok).toBe(true);
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("F5 (evidence): config changes after first use are silently ignored (WeakMap cache)", () => {
@@ -189,12 +217,16 @@ describe("findings", () => {
     expect(Object.keys(padded.state.entities)).toEqual(["ABC", " ABC "]);
   });
 
-  it("decision 2 (evidence): addNode with an existing identity drops the differing input data without a warning", () => {
+  it("decision 2: addNode with an existing identity keeps the registered data and warns ENTITY_DATA_IGNORED", () => {
     const cfg = config();
     const s = sample(cfg);
     const result = unwrap(addNode(s, { entity: leaf("X", "NEW LABEL"), parentId: "n6", relationship: rel(0) }, cfg));
     expect(result.state.entities["X"]?.data.label).toBeUndefined();
-    expect(result.warnings).toEqual([]);
+    expect(codes(result.warnings)).toEqual(["ENTITY_DATA_IGNORED"]);
+    expect(result.warnings[0]?.entityKey).toBe("X");
+    // Equal data (a fresh but identical object) is not reported.
+    const same = unwrap(addNode(s, { entity: leaf("X"), parentId: "n6", relationship: rel(0) }, cfg));
+    expect(same.warnings).toEqual([]);
   });
 
   it("decision 3 (evidence): root links are never checked by rules or the relationship predicate", () => {

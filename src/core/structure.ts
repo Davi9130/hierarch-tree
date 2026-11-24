@@ -2,7 +2,7 @@ import { resolveConfig } from "./config.js";
 import { Draft } from "./draft.js";
 import { coreError } from "./errors.js";
 import { resolveIdentity } from "./identity.js";
-import { getOwn, hasOwn, insertAt, without } from "./internal.js";
+import { getOwn, hasOwn, insertAt, shallowEqual, without } from "./internal.js";
 import { failure, finish, resolveIndex } from "./operation.js";
 import { collectSubtree, isSelfOrAncestor, nodeSource } from "./tree.js";
 import type {
@@ -13,6 +13,7 @@ import type {
   StructureEvent,
   StructureNode,
   StructureState,
+  ValidationWarning,
 } from "./types.js";
 
 interface OperationContext {
@@ -42,7 +43,8 @@ export type AddNodeInput<TEntity, TRelationship> = OperationContext & {
 /**
  * Adds an occurrence of an entity. When `entity` is given and its identity
  * already exists, the central record is reused unchanged (use `updateEntity`
- * to change its data).
+ * to change its data); if the given data differs from the registered data
+ * (shallow comparison), the result carries an `ENTITY_DATA_IGNORED` warning.
  */
 export function addNode<TEntity, TRelationship>(
   state: StructureState<TEntity, TRelationship>,
@@ -59,6 +61,7 @@ export function addNode<TEntity, TRelationship>(
 
   let entityKey: EntityKey;
   const registered: EntityKey[] = [];
+  const warnings: ValidationWarning[] = [];
   if (input.entityKey !== undefined) {
     entityKey = input.entityKey;
     if (!hasOwn(state.entities, entityKey)) {
@@ -69,9 +72,20 @@ export function addNode<TEntity, TRelationship>(
     if (!identity.ok) return identity;
     entityKey = identity.value;
     if (!hasOwn(state.entities, entityKey)) {
-      draft.setEntity({ key: entityKey, data: input.entity });
+      const stored = draft.setEntity({ key: entityKey, data: input.entity });
       registered.push(entityKey);
-      events.push({ type: "ENTITY_REGISTERED", key: entityKey, entity: input.entity });
+      events.push({ type: "ENTITY_REGISTERED", key: entityKey, entity: stored.data });
+    } else {
+      const existing = getOwn(state.entities, entityKey);
+      if (existing !== undefined && !shallowEqual(existing.data, input.entity)) {
+        warnings.push(
+          coreError(
+            "ENTITY_DATA_IGNORED",
+            `Entity "${entityKey}" is already registered; the given data was ignored (use updateEntity to change it).`,
+            { entityKey },
+          ),
+        );
+      }
     }
   }
 
@@ -93,12 +107,15 @@ export function addNode<TEntity, TRelationship>(
 
   return finish(
     draft,
-    { nodeIds: [nodeId], entityKeys: registered },
+    // An entity registered by this very call has no other occurrence, so the
+    // new link cannot close an identity cycle and needs no cycle search.
+    { nodeIds: [nodeId], entityKeys: registered, ...(registered.length > 0 ? {} : { newLinks: [nodeId] }) },
     events,
     config,
     "addNode",
     input.context,
     { nodeId, entityKey },
+    warnings,
   );
 }
 
@@ -176,7 +193,16 @@ export function removeNode<TEntity, TRelationship>(
   if (resolveConfig(config).entityRemoval === "when-unreferenced") {
     collectUnreferenced(draft, events);
   }
-  return finish(draft, { nodeIds: dirty }, events, config, "removeNode", input.context, {});
+  const newLinks = (input.children ?? "cascade") === "cascade" ? undefined : node.childIds;
+  return finish(
+    draft,
+    { nodeIds: dirty, ...(newLinks === undefined ? {} : { newLinks }) },
+    events,
+    config,
+    "removeNode",
+    input.context,
+    {},
+  );
 }
 
 export type MoveNodeInput = OperationContext & {
@@ -230,7 +256,7 @@ export function moveNode<TEntity, TRelationship>(
   if (target !== null) dirty.push(target);
   return finish(
     draft,
-    { nodeIds: dirty },
+    { nodeIds: dirty, newLinks: [node.id] },
     [
       {
         type: "NODE_MOVED",
@@ -262,11 +288,11 @@ export function updateRelationship<TEntity, TRelationship>(
     return failure(coreError("NODE_NOT_FOUND", `Node "${input.nodeId}" does not exist.`, { nodeId: input.nodeId }));
   }
   const draft = new Draft(state);
-  draft.setNode({ ...node, relationship: input.relationship });
+  const stored = draft.setNode({ ...node, relationship: input.relationship });
   return finish(
     draft,
     { nodeIds: [node.id] },
-    [{ type: "RELATIONSHIP_UPDATED", nodeId: node.id, previous: node.relationship, next: input.relationship }],
+    [{ type: "RELATIONSHIP_UPDATED", nodeId: node.id, previous: node.relationship, next: stored.relationship }],
     config,
     "updateRelationship",
     input.context,

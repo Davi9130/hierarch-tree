@@ -18,7 +18,9 @@ export function getOwn<TValue>(
 
 /**
  * Returns a shallow copy of `record` with `changes` applied (`undefined`
- * deletes). Existing keys keep their position; new keys are appended.
+ * deletes). Existing keys keep their position; new keys are appended, except
+ * that integer-like keys ("2", "10") always come first in numeric order, as
+ * for any JavaScript object.
  */
 export function patchRecord<TValue>(
   record: Readonly<Record<string, TValue>>,
@@ -55,4 +57,39 @@ export function insertAt<T>(list: readonly T[], index: number, value: T): T[] {
 
 export function without<T>(list: readonly T[], value: T): T[] {
   return list.filter((item) => item !== value);
+}
+
+/**
+ * Takes ownership of a consumer value before it enters the state (F1): plain
+ * objects and arrays are shallow-copied and frozen, so mutating the object the
+ * consumer passed in never changes the state; other objects (class instances)
+ * are frozen in place, because copying cannot preserve private fields or
+ * internal slots. Primitives and already-frozen values are returned as-is, so
+ * values that are already in the state keep their reference.
+ */
+export function ownValue<T>(value: T): T {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
+  if (Array.isArray(value)) return Object.freeze(value.slice()) as T;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return Object.freeze(value);
+  const copy = Object.create(prototype as object | null) as T;
+  Object.defineProperties(copy, Object.getOwnPropertyDescriptors(value));
+  return Object.freeze(copy);
+}
+
+/**
+ * Same reference, or same prototype and the same own enumerable properties
+ * compared with `Object.is` (one level deep).
+ */
+export function shallowEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+  if (Object.getPrototypeOf(a) !== Object.getPrototypeOf(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const key of keys) {
+    if (!hasOwnProperty.call(b, key)) return false;
+    if (!Object.is((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) return false;
+  }
+  return true;
 }

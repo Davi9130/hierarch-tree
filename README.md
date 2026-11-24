@@ -35,6 +35,7 @@ structure.toTree();
 - [API reference](docs/api-reference.md)
 - [Regras de relacionamento](docs/relationship-rules.md)
 - [Adapter Zod (`hierarch-tree/zod`)](docs/zod.md): validadores a partir de schemas Zod do consumidor (opcional)
+- [Adapter Zustand](docs/zustand.md) (`hierarch-tree/zustand`, `zustand` como peerDependency opcional)
 
 ## Desenvolvimento
 

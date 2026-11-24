@@ -1,4 +1,5 @@
 import { resolveConfig } from "./config.js";
+import { freezeState } from "./draft.js";
 import {
   rekeyEntity,
   removeEntity,
@@ -72,6 +73,17 @@ export type StructureListener<TEntity, TRelationship> = (
 export interface CreateEntityStructureOptions<TEntity, TRelationship> {
   /** Validated with `validateStructure`; throws `InvalidStateError` when invalid. */
   readonly initialState?: StructureState<TEntity, TRelationship>;
+  /**
+   * Called when a `subscribe` listener throws. Listeners are isolated: the
+   * mutation is already committed, the remaining listeners still run and the
+   * caller still receives its `Result`. Default: `console.error`.
+   */
+  readonly onListenerError?: (error: unknown, listener: StructureListener<TEntity, TRelationship>) => void;
+}
+
+function reportListenerError(error: unknown): void {
+  const target = (globalThis as { console?: { error?: (...data: unknown[]) => void } }).console;
+  target?.error?.("[hierarch-tree] A structure listener threw:", error);
 }
 
 /**
@@ -130,13 +142,25 @@ export function createEntityStructure<TEntity, TRelationship = unknown>(
   if (options.initialState !== undefined) {
     const validation = validateStructure(state, config);
     if (!validation.valid) throw new InvalidStateError(validation.errors);
+    state = freezeState(state); // F1: the instance owns its state
   }
   const listeners = new Set<StructureListener<TEntity, TRelationship>>();
 
   function apply<R extends OperationResult<TEntity, TRelationship, object>>(result: R): R {
     if (result.ok && result.value.state !== state) {
       state = result.value.state;
-      for (const listener of [...listeners]) listener(state, result.value.events);
+      const committed = state;
+      for (const listener of [...listeners]) {
+        try {
+          listener(committed, result.value.events);
+        } catch (error) {
+          try {
+            (options.onListenerError ?? reportListenerError)(error, listener);
+          } catch {
+            // the error handler itself failed; never let it reach the caller
+          }
+        }
+      }
     }
     return result;
   }

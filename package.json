@@ -16,6 +16,9 @@
     "./zod": {
       "types": "./dist/adapters/zod/index.d.ts",
       "import": "./dist/zod.js"
+    "./zustand": {
+      "types": "./dist/adapters/zustand/index.d.ts",
+      "import": "./dist/zustand.js"
     },
     "./package.json": "./package.json"
   },
@@ -46,6 +49,10 @@
   },
   "peerDependenciesMeta": {
     "zod": {
+    "zustand": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "zustand": {
       "optional": true
     }
   },
@@ -54,5 +61,6 @@
     "typescript": "^7.0.2",
     "vitest": "^5.1.1",
     "zod": "^4.6.7"
+    "zustand": "^5.1.0"
   }
 }

@@ -69,11 +69,11 @@ export function registerEntity<TEntity, TRelationship>(
     };
   }
   const draft = new Draft(state);
-  draft.setEntity({ key, data: entity });
+  const stored = draft.setEntity({ key, data: entity });
   return finish(
     draft,
     { nodeIds: [], entityKeys: [key] },
-    [{ type: "ENTITY_REGISTERED", key, entity }],
+    [{ type: "ENTITY_REGISTERED", key, entity: stored.data }],
     config,
     "registerEntity",
     undefined,

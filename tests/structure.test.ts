@@ -218,6 +218,21 @@ describe("identity cycles", () => {
     ]);
   });
 
+  it("follows other occurrences when a move closes a long cycle (incremental search)", () => {
+    const config = makeConfig();
+    let state = build(config); // a(n1) → b(n2) → c(n3); d(n4) root
+    state = unwrap(addNode(state, { entity: item("e"), parentId: "n4", relationship: { weight: 0 } }, config)).state; // n5 d → e
+    state = unwrap(addNode(state, { entityKey: "a", parentId: "n5", relationship: { weight: 0 } }, config)).state; // n6 e → a
+    // Moving d under c adds c → d; d → e → a (via n6) → b → c closes the cycle.
+    const errors = expectFailure(moveNode(state, { nodeId: "n4", newParentId: "n3" }, config));
+    expect(codes(errors)).toEqual(["IDENTITY_CYCLE"]);
+    expect(errors[0]?.nodeId).toBe("n4");
+    expect(errors[0]?.details?.["cycle"]).toEqual(["d", "e", "a", "b", "c", "d"]);
+    // Links that create no edge never trigger the search; the same move is fine once e → a is gone.
+    const withoutLink = unwrap(removeNode(state, { nodeId: "n6" }, config)).state;
+    expect(moveNode(withoutLink, { nodeId: "n4", newParentId: "n3" }, config).ok).toBe(true);
+  });
+
   it("can be allowed by policy", () => {
     const config = makeConfig({ policies: { identityCycles: "allow" } });
     const state = build(config);
