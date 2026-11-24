@@ -52,7 +52,9 @@ type Verdict =
 
 O validador roda em cada nó tocado pela operação e também no pai dele, de modo que uma regra agregada (como "a soma das participações dos filhos ≤ 100%") é reavaliada quando um filho muda. Sem `code`, o erro sai como `VALIDATION_FAILED` (categoria `domain`).
 
-Uma configuração inválida lança `EntityStructureConfigError`. A configuração é resolvida e memoizada por objeto na primeira vez que é usada.
+- Sem `normalize`, a identidade é o valor bruto, então `" ABC "` e `"ABC"` são entidades diferentes. Para ignorar espaços, normalize: `identity: { key: "code", normalize: (value) => value.trim() }`.
+
+Uma configuração inválida lança `EntityStructureConfigError`. A configuração é resolvida e memoizada por objeto na primeira vez que é usada. **Mudanças posteriores no mesmo objeto são ignoradas sem aviso** (por exemplo, `config.relationships.rules.push(...)`). Trate a configuração como imutável e crie um objeto novo para mudar regras.
 
 ## Estado e resultados
 
@@ -87,12 +89,16 @@ Todas têm a forma `(state, input, config) => OperationResult` e todas passam pe
 | `updateEntity(state, { key, data }, config)` | | | Os novos dados precisam resolver para a mesma `key` (senão, `IDENTITY_CHANGE_REQUIRES_REKEY`). Revalida todas as ocorrências. |
 | `rekeyEntity(state, { key, data }, config)` | | `{ key }` (a nova chave) | Troca a identidade e atualiza todas as ocorrências. Falha com `IDENTITY_COLLISION` se a nova chave já existe. |
 | `removeEntity(state, { key }, config)` | | | `ENTITY_IN_USE` enquanto houver ocorrências, exceto com `entityRemoval: "force"`, que remove as ocorrências e os descendentes delas. |
-| `addNode(state, input, config)` | `{ entity \| entityKey, parentId?, relationship, index? }` | `{ nodeId, entityKey }` | `entity` registra a entidade se ela for nova e **reaproveita o cadastro sem alterá-lo** se ela já existir. `entityKey` exige uma entidade já registrada. Sem `parentId` (ou com `null`), o nó vira raiz. Sem `index`, entra no fim. |
+| `addNode(state, input, config)` | `{ entity \| entityKey, parentId?, relationship, index? }` | `{ nodeId, entityKey }` | `entity` registra a entidade se ela for nova e **reaproveita o cadastro sem alterá-lo** se ela já existir; se os dados forem diferentes do cadastro (comparação rasa), o resultado traz o warning `ENTITY_DATA_IGNORED`. `entityKey` exige uma entidade já registrada. Sem `parentId` (ou com `null`), o nó vira raiz. Sem `index`, entra no fim. |
 | `removeNode(state, input, config)` | `{ nodeId, children?: "cascade" \| "reparent", reparentTo? }` | | `cascade` (padrão) remove os descendentes. `reparent` move os filhos para `reparentTo` (padrão: o pai do nó removido, na mesma posição). Nunca apaga o cadastro, exceto com `entityRemoval: "when-unreferenced"`. |
 | `moveNode(state, { nodeId, newParentId, index? }, config)` | | | Preserva a entidade e os descendentes. `CYCLE_DETECTED` se o destino for o próprio nó ou um descendente dele. Revalida as regras no destino e a profundidade da subárvore inteira. `index` é a posição na lista de destino depois do movimento. Se a posição não muda, devolve o mesmo estado e nenhum evento. |
 | `updateRelationship(state, { nodeId, relationship }, config)` | | | Muda só aquela ocorrência. |
 
 As entradas usam `NoInfer`: os tipos vêm de `state` e `config`, e um literal no `input` não os alarga.
+
+**Imutabilidade.** O estado devolvido é congelado (`Object.freeze`) e é dono do que recebe: entidades e relacionamentos que são objetos simples ou arrays entram como cópia rasa congelada, e instâncias de classe são congeladas no lugar. Mudar depois o objeto que você passou não altera o estado, e mutar o estado lança `TypeError` em modo estrito. O congelamento é raso. Detalhes e custo em [architecture.md](./architecture.md#o-estado-é-dono-do-que-recebe-tes-35--f1).
+
+**Ordem.** `getAllEntities` e `Object.keys(state.nodes)` seguem a ordem de propriedades do JavaScript: chaves que parecem inteiros (`"2"`, `"10"`) vêm primeiro, em ordem numérica. `rootIds` e `childIds` sempre guardam a ordem da estrutura.
 
 ## Consultas
 
@@ -131,14 +137,16 @@ A precedência das regras está em [relationship-rules.md](./relationship-rules.
 ## Wrapper com estado: `createEntityStructure`
 
 ```ts
-const structure = createEntityStructure<Entity, Relationship>(config, { initialState? });
+const structure = createEntityStructure<Entity, Relationship>(config, { initialState?, onListenerError? });
 ```
 
 - Cada instância tem o próprio estado; duas instâncias nunca compartilham nada.
 - Valida a configuração na hora (`EntityStructureConfigError`). Se receber um `initialState`, ele passa por `validateStructure`, e um estado inválido lança `InvalidStateError` (com `.errors`).
 - As mutações aceitam o mesmo `input` das funções puras, sem `state` e `config`, e devolvem o mesmo `OperationResult`. O estado da instância só muda quando o resultado é `ok`.
 - Atalhos: `removeNode(nodeId)` e `removeEntity(key)` também aceitam só o id.
+- Um `initialState` vindo de fora é assumido como em `importStructure`: o que não está congelado é copiado e congelado, e o seu objeto fica intacto.
 - `getState()` devolve o estado atual. `subscribe((state, events) => void)` devolve a função que cancela a inscrição e é chamado só quando o estado muda.
+- Os listeners são isolados: se um deles lançar, a mutação continua aplicada, os demais rodam e quem chamou recebe o `Result` normalmente. O erro vai para `onListenerError(error, listener)`, cujo padrão é `console.error`.
 - Todas as consultas e as funções de regra acima estão disponíveis sem `state` e `config`, por exemplo `structure.findAllByIdentity(value)` ou `structure.canRelate(parent, child)`.
 
 ```ts
@@ -248,7 +256,7 @@ Campos de `HistoryEntry`:
 | Categoria | Códigos |
 |---|---|
 | `structure` | `NODE_NOT_FOUND`, `PARENT_NOT_FOUND`, `CYCLE_DETECTED`, `NODE_ID_COLLISION`, `INVALID_NODE_ID`, `INVALID_INDEX`, `MAX_DEPTH_EXCEEDED`, `IDENTITY_CYCLE`, `DANGLING_REFERENCE`, `INCONSISTENT_LINK`, `SNAPSHOT_INVALID_FORMAT`, `SNAPSHOT_UNSUPPORTED_VERSION`, `SNAPSHOT_MIGRATION_FAILED` |
-| `identity` | `IDENTITY_MISSING`, `IDENTITY_INVALID`, `IDENTITY_EMPTY`, `IDENTITY_COLLISION`, `IDENTITY_MISMATCH`, `IDENTITY_CHANGE_REQUIRES_REKEY`, `ENTITY_NOT_FOUND`, `ENTITY_IN_USE` |
+| `identity` | `IDENTITY_MISSING`, `IDENTITY_INVALID`, `IDENTITY_EMPTY`, `IDENTITY_COLLISION`, `IDENTITY_MISMATCH`, `IDENTITY_CHANGE_REQUIRES_REKEY`, `ENTITY_NOT_FOUND`, `ENTITY_IN_USE`, `ENTITY_DATA_IGNORED` (só warning, em `addNode`) |
 | `relationship` | `RELATIONSHIP_DENIED`, `RELATIONSHIP_NOT_ALLOWED`, `RELATIONSHIP_INVALID`, `SIBLING_DUPLICATE` |
 | `domain` | `VALIDATION_FAILED` (padrão dos validadores do consumidor sem `code`) |
 

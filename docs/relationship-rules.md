@@ -2,6 +2,8 @@
 
 As regras dizem quais vínculos **pai → filho** são permitidos. O core não conhece nenhum tipo de entidade: quem descreve as regras é o consumidor, com base nas propriedades da própria entidade.
 
+> ⚠️ **Raízes não passam pelas regras.** Uma raiz não tem vínculo, então nem as regras nem `relationships.validate` rodam para ela: nem quando o nó vira raiz (`addNode` sem `parentId`, `moveNode` para `null`), nem num `updateEntity` de uma entidade que só aparece como raiz. Para dizer quem pode (ou não) ser raiz, use um validador em `config.validators` que cheque `parent === null` (veja [Onde as regras são aplicadas](#onde-as-regras-são-aplicadas)).
+
 ```ts
 relationships: {
   mode?: "restrictive" | "permissive";        // padrão: "restrictive"
@@ -26,7 +28,7 @@ interface RelationshipRule<TEntity, TRelationship> {
 
 O `EntityMatcher` aceita duas formas:
 
-- **Objeto declarativo** (`{ kind: "unit" }`): cada propriedade é comparada com `===`. Com um array (`{ kind: ["unit", "division"] }`), vale "um de". **Só valores primitivos são aceitos.** Um objeto aninhado faz `EntityStructureConfigError` ser lançado na primeira vez que a configuração é usada, porque comparar objetos de forma rasa é ambíguo.
+- **Objeto declarativo** (`{ kind: "unit" }`): cada propriedade é lida com um acesso normal, como em `identity.key` (getters e propriedades herdadas de instâncias de classe também valem), e comparada com `===`. Com um array (`{ kind: ["unit", "division"] }`), vale "um de". **Só valores primitivos são aceitos.** Um objeto aninhado faz `EntityStructureConfigError` ser lançado na primeira vez que a configuração é usada, porque comparar objetos de forma rasa é ambíguo.
 - **Predicado** (`(entity) => boolean`): para qualquer comparação mais rica.
 
 ## Precedência
@@ -53,7 +55,16 @@ Em toda mutação, pelo pipeline único:
 | `removeNode` com `children: "reparent"` | novo pai → cada filho realocado |
 | `validateStructure` | todos os vínculos |
 
-Raízes não têm vínculo, então as regras não se aplicam a elas. Para restringir quem pode ser raiz, use um validador (`config.validators`) que olhe para `parent === null`.
+Raízes não têm vínculo, então as regras não se aplicam a elas. Para restringir quem pode ser raiz, use um validador (`config.validators`) que olhe para `parent === null`:
+
+```ts
+validators: [
+  ({ node, parent }) =>
+    parent === null && node.entity.kind !== "holding"
+      ? { valid: false, code: "ROOT_NOT_ALLOWED", message: "Só uma holding pode ser raiz." }
+      : { valid: true },
+],
+```
 
 ## Contexto recebido por `when` e `validate`
 

@@ -18,7 +18,9 @@ export function getOwn<TValue>(
 
 /**
  * Returns a shallow copy of `record` with `changes` applied (`undefined`
- * deletes). Existing keys keep their position; new keys are appended.
+ * deletes). Existing keys keep their position; new keys are appended, except
+ * that integer-like keys ("2", "10") always come first in numeric order, as
+ * for any JavaScript object.
  */
 export function patchRecord<TValue>(
   record: Readonly<Record<string, TValue>>,
