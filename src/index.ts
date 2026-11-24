@@ -73,3 +73,32 @@ export {
   type EntityStructure,
   type StructureListener,
 } from "./core/entity-structure.js";
+
+// Serialization (versioned import / export)
+export {
+  exportStructure,
+  importStructure,
+  SNAPSHOT_VERSION,
+  type ImportStructureOptions,
+  type ImportStructureResult,
+  type ImportStructureSuccess,
+  type SnapshotEntityV1,
+  type SnapshotMigration,
+  type SnapshotNodeV1,
+  type StructureSnapshotV1,
+} from "./core/serialization/index.js";
+
+// Optional history (not an audit trail)
+export {
+  createHistory,
+  DEFAULT_HISTORY_LIMIT,
+  toHistoryEntries,
+  trackHistory,
+  type History,
+  type HistoryEntry,
+  type HistoryOptions,
+  type HistoryPosition,
+  type HistoryValue,
+  type RecordMeta,
+  type Subscribable,
+} from "./core/history/index.js";

@@ -9,6 +9,8 @@ Tudo é exportado por `hierarch-tree`. Os genéricos são `TEntity` (dados do ca
 - [Regras e validação](#regras-e-validação)
 - [Wrapper com estado: `createEntityStructure`](#wrapper-com-estado-createentitystructure)
 - [Eventos](#eventos)
+- [Serialização: `exportStructure` / `importStructure`](#serialização-exportstructure--importstructure)
+- [Histórico opcional](#histórico-opcional)
 - [Códigos de erro](#códigos-de-erro)
 
 ## Configuração
@@ -118,7 +120,7 @@ Todas as travessias são iterativas.
 
 | Função | Descrição |
 |---|---|
-| `validateStructure(state, config, { context? })` | Checa a integridade referencial e depois roda o pipeline completo. Devolve `{ valid, errors, warnings }`. |
+| `validateStructure(state, config, { context? })` | Checa a integridade referencial (incluindo ciclos de `parentId`, com `CYCLE_DETECTED`) e depois roda o pipeline completo. Devolve `{ valid, errors, warnings }`. |
 | `validateRelationship(parent, child, config, { relationship?, context? })` | Avalia regras e `validate` para dois `TEntity`. Devolve `ValidationResult`. |
 | `canRelate(parent, child, config, options?)` | `boolean` |
 | `getAllowedChildren(state, parentKey, config, options?)` | Entidades registradas que podem ser filhas de `parentKey`. |
@@ -163,13 +165,89 @@ if (!result.ok) {
 | `NODE_MOVED` | `nodeId`, `from: { parentId, index }`, `to: { parentId, index }` |
 | `RELATIONSHIP_UPDATED` | `nodeId`, `previous`, `next` |
 
+## Serialização: `exportStructure` / `importStructure`
+
+```ts
+const snapshot = exportStructure(state);           // StructureSnapshotV1
+const json = JSON.stringify(snapshot);
+const result = importStructure(JSON.parse(json), config, { migrations?, context? });
+if (result.ok) createEntityStructure(config, { initialState: result.value.state });
+```
+
+### Formato `StructureSnapshotV1`
+
+```ts
+{
+  version: 1,
+  entities: [{ key, data }],                                    // ordem do registro
+  nodes: [{ id, entityKey, parentId, childIds, relationship }], // lista plana, em pré-ordem a partir das raízes
+  rootIds: [...]
+}
+```
+
+- Só objetos e arrays simples, sem `Map` e sem funções. O snapshot é serializável em JSON na mesma medida em que `TEntity` e `TRelationship` forem.
+- `childIds` guarda a ordem dos filhos. `SNAPSHOT_VERSION` é a versão que `exportStructure` grava.
+- `exportStructure` não valida e não descarta nada: num estado inválido, os nós inalcançáveis vão no fim de `nodes`.
+- Round-trip: `importStructure(JSON.parse(JSON.stringify(exportStructure(s))), config)` devolve um estado equivalente (`toEqual`) a `s`. Um `relationship: undefined` some no JSON e volta como `undefined`.
+
+### Importação
+
+`importStructure(data, config, options?)` recebe dados sem tipo (por exemplo, a saída do `JSON.parse`) e devolve `Result<{ state, warnings, migratedFrom }, ValidationError[]>`. Os estágios rodam nesta ordem:
+
+1. **Versão:** `version` precisa ser um inteiro (`SNAPSHOT_UNSUPPORTED_VERSION`). Uma versão diferente de `SNAPSHOT_VERSION` só é aceita se houver migração para ela.
+2. **Migrações:** `options.migrations` é um mapa `{ [versãoDeOrigem]: (snapshot) => snapshotMaisNovo }`, aplicado em cadeia até chegar a `SNAPSHOT_VERSION`. Se a migração lançar uma exceção, devolver algo sem `version` ou voltar a uma versão já vista, o erro é `SNAPSHOT_MIGRATION_FAILED`. `migratedFrom` informa a versão original.
+3. **Formato:** os tipos dos campos de `entities`, `nodes` e `rootIds` (`SNAPSHOT_INVALID_FORMAT`). Todos os erros de formato são devolvidos juntos, e a importação para aqui.
+4. **Duplicidade no snapshot:** id de nó repetido (`NODE_ID_COLLISION`), chave de entidade repetida e chaves diferentes que colidem depois da normalização da identidade (`IDENTITY_COLLISION`, com `details.resolvedKey` e `details.existingKey`). Nesses casos vale a primeira ocorrência.
+5. **Pipeline do core, via `validateStructure`** (não existe um validador paralelo): integridade referencial (entidade, pai, filho ou raiz inexistente → `DANGLING_REFERENCE`; vínculos inconsistentes ou nós inalcançáveis → `INCONSISTENT_LINK`; ciclo de `parentId` → `CYCLE_DETECTED`), seguida de estrutura (`MAX_DEPTH_EXCEEDED`, `IDENTITY_CYCLE`), identidade (`IDENTITY_MISSING`/`INVALID`/`EMPTY`/`MISMATCH`), regras de relacionamento, duplicidade entre irmãos e validadores do consumidor. Os validadores recebem `operation: "validateStructure"` e o `options.context`.
+
+Os erros dos estágios 4 e 5 são devolvidos juntos. Dentro do pipeline vale a mesma regra das operações: os erros de estrutura e de identidade interrompem os estágios seguintes, e os de regras e de validadores aparecem todos juntos. Cada erro traz:
+
+- `nodeId` e/ou `entityKey`, quando se aplicam;
+- `path` (ids dos nós, da raiz até `nodeId`), quando o nó está na árvore;
+- `details.pointer` (JSON Pointer no snapshot, por exemplo `/nodes/3/parentId`), nos erros de formato e de duplicidade.
+
+Uma configuração inválida lança `EntityStructureConfigError`, como nas outras funções. `data` e `relationship` não são validados quanto ao tipo: para isso, use validadores do consumidor (por exemplo, com um schema).
+
+## Histórico opcional
+
+> **Não é auditoria oficial.** O histórico é um log em memória, opt-in e limitado, pensado para desfazer na UI, para depuração e para telas de "alterações recentes". Ele não persiste nada, não garante integridade nem autoria, pode ser limpo pelo dono e só registra os eventos que recebe. Se você precisa de auditoria, grave os eventos num sistema próprio, no servidor.
+
+O core não registra nada sozinho: as operações puras já devolvem `events`, e o módulo de histórico só os acumula quando você pede.
+
+```ts
+const history = createHistory<Entity, Relationship>({ limit: 500 }); // padrão: DEFAULT_HISTORY_LIMIT (1000)
+const stop = trackHistory(structure, history, { getContext: () => ({ userId }) });
+// ...
+history.entries(); // do mais antigo para o mais novo
+stop();
+```
+
+- `createHistory({ limit?, now?, createId? })`: `limit` é um inteiro positivo ou `Infinity`, e as entradas mais antigas são descartadas quando ele é ultrapassado. `now` (padrão `Date.now`) e `createId` (padrão `h1`, `h2`...) são injetáveis.
+- `history.record(events, { context?, state? })` acrescenta uma entrada por evento e devolve as entradas novas. Use para registrar o resultado de funções puras: `history.record(result.value.events, { state: result.value.state, context })`.
+- `trackHistory(structure, history, { getContext? })` assina o `subscribe` de um `createEntityStructure` e devolve a função que cancela a assinatura. Operações que falham não geram eventos.
+- `history.entries()` devolve uma cópia. `history.clear()` esvazia o log.
+- `toHistoryEntries(events, { timestamp, createId, context?, state? })` faz o mapeamento puro, sem acumular.
+
+Campos de `HistoryEntry`:
+
+| Campo | Conteúdo |
+|---|---|
+| `id`, `type`, `timestamp` | Id da entrada, tipo do evento e horário (as entradas de um mesmo lote têm o mesmo horário) |
+| `entityKey` | Chave da entidade. Em `NODE_MOVED` e `RELATIONSHIP_UPDATED`, vem de `state`, quando ele é informado |
+| `previousEntityKey` | Só em `ENTITY_REKEYED` |
+| `nodeId` | Nos eventos de nó e de relacionamento |
+| `from` / `to` | `{ parentId, index? }`: origem e destino em `NODE_MOVED`, destino em `NODE_ADDED`, origem (sem `index`) em `NODE_REMOVED` |
+| `before` / `after` | Entidade anterior/nova, relacionamento anterior/novo, ou o nó removido (`before` de `NODE_REMOVED`) |
+| `context` | O que o consumidor informou (usuário, motivo, id da requisição...) |
+| `event` | O `StructureEvent` original |
+
 ## Códigos de erro
 
 `CORE_ERROR_CODES` mapeia cada código para a sua categoria. `isCoreErrorCode(code)` diz se um código é do core.
 
 | Categoria | Códigos |
 |---|---|
-| `structure` | `NODE_NOT_FOUND`, `PARENT_NOT_FOUND`, `CYCLE_DETECTED`, `NODE_ID_COLLISION`, `INVALID_NODE_ID`, `INVALID_INDEX`, `MAX_DEPTH_EXCEEDED`, `IDENTITY_CYCLE`, `DANGLING_REFERENCE`, `INCONSISTENT_LINK` |
+| `structure` | `NODE_NOT_FOUND`, `PARENT_NOT_FOUND`, `CYCLE_DETECTED`, `NODE_ID_COLLISION`, `INVALID_NODE_ID`, `INVALID_INDEX`, `MAX_DEPTH_EXCEEDED`, `IDENTITY_CYCLE`, `DANGLING_REFERENCE`, `INCONSISTENT_LINK`, `SNAPSHOT_INVALID_FORMAT`, `SNAPSHOT_UNSUPPORTED_VERSION`, `SNAPSHOT_MIGRATION_FAILED` |
 | `identity` | `IDENTITY_MISSING`, `IDENTITY_INVALID`, `IDENTITY_EMPTY`, `IDENTITY_COLLISION`, `IDENTITY_MISMATCH`, `IDENTITY_CHANGE_REQUIRES_REKEY`, `ENTITY_NOT_FOUND`, `ENTITY_IN_USE` |
 | `relationship` | `RELATIONSHIP_DENIED`, `RELATIONSHIP_NOT_ALLOWED`, `RELATIONSHIP_INVALID`, `SIBLING_DUPLICATE` |
 | `domain` | `VALIDATION_FAILED` (padrão dos validadores do consumidor sem `code`) |

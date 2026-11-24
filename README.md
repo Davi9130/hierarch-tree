@@ -6,6 +6,7 @@ Core genérico em TypeScript, sem dependências de runtime, para estruturas hier
 - **Cadastro central separado das ocorrências:** a mesma entidade pode aparecer em várias posições, cada ocorrência com o próprio relacionamento.
 - **Regras de relacionamento configuráveis:** deny > allow > `mode`, com o validador customizado sempre executado.
 - **Operações puras e atômicas** sobre um estado normalizado e imutável, todas passando pelo mesmo pipeline de validação.
+- **Importação/exportação versionada** (`exportStructure` / `importStructure`, com migrações) e **histórico opcional** de alterações (não é auditoria).
 
 O core não conhece nenhum domínio. Conceitos como PF/PJ ficam na configuração do consumidor (veja `examples/corporate-structure.ts`).
 

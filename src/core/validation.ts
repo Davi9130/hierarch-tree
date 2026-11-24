@@ -287,8 +287,45 @@ function checkIntegrity<TEntity, TRelationship>(
   for (const rootId of state.rootIds) {
     for (const id of collectSubtree(getNode, rootId)) reached.add(id);
   }
-  for (const id of Object.keys(state.nodes)) {
-    if (!reached.has(id)) inconsistent(`Node "${id}" is not reachable from any root.`, id);
+  const unreachable = Object.keys(state.nodes).filter((id) => !reached.has(id));
+  for (const id of unreachable) inconsistent(`Node "${id}" is not reachable from any root.`, id);
+  if (unreachable.length > 0) errors.push(...parentCycles(state, unreachable));
+  return errors;
+}
+
+/**
+ * Reports each cycle in the `parentId` chains of unreachable nodes once
+ * (`CYCLE_DETECTED`), so a state such as `a.parentId = b, b.parentId = a`
+ * names the cycle instead of only flagging the nodes as unreachable.
+ */
+function parentCycles<TEntity, TRelationship>(
+  state: StructureState<TEntity, TRelationship>,
+  unreachable: readonly NodeId[],
+): ValidationError[] {
+  const getNode = nodeSource(state);
+  const errors: ValidationError[] = [];
+  const done = new Set<NodeId>();
+  for (const start of unreachable) {
+    const chain: NodeId[] = [];
+    const onChain = new Map<NodeId, number>();
+    let current = getNode(start);
+    while (current !== undefined && !done.has(current.id)) {
+      const seenAt = onChain.get(current.id);
+      if (seenAt !== undefined) {
+        const cycle = chain.slice(seenAt);
+        errors.push(
+          coreError("CYCLE_DETECTED", `Parent cycle: ${[...cycle, cycle[0] ?? current.id].join(" → ")}.`, {
+            nodeId: current.id,
+            details: { cycle },
+          }),
+        );
+        break;
+      }
+      onChain.set(current.id, chain.length);
+      chain.push(current.id);
+      current = current.parentId === null ? undefined : getNode(current.parentId);
+    }
+    for (const id of chain) done.add(id);
   }
   return errors;
 }
