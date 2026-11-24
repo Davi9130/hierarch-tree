@@ -1,4 +1,5 @@
 import { resolveConfig } from "./config.js";
+import { freezeState } from "./draft.js";
 import {
   rekeyEntity,
   removeEntity,
@@ -130,6 +131,7 @@ export function createEntityStructure<TEntity, TRelationship = unknown>(
   if (options.initialState !== undefined) {
     const validation = validateStructure(state, config);
     if (!validation.valid) throw new InvalidStateError(validation.errors);
+    state = freezeState(state); // F1: the instance owns its state
   }
   const listeners = new Set<StructureListener<TEntity, TRelationship>>();
 

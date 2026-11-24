@@ -60,11 +60,11 @@ export function updateEntity<TEntity, TRelationship>(
     );
   }
   const draft = new Draft(state);
-  draft.setEntity({ key: input.key, data: input.data });
+  const stored = draft.setEntity({ key: input.key, data: input.data });
   return finish(
     draft,
     { nodeIds: occurrencesOf(state, input.key), entityKeys: [input.key] },
-    [{ type: "ENTITY_UPDATED", key: input.key, previous: record.data, next: input.data }],
+    [{ type: "ENTITY_UPDATED", key: input.key, previous: record.data, next: stored.data }],
     config,
     "updateEntity",
     input.context,
@@ -108,7 +108,7 @@ export function rekeyEntity<TEntity, TRelationship>(
   const draft = new Draft(state);
   const nodeIds = occurrencesOf(state, input.key);
   draft.deleteEntity(input.key);
-  draft.setEntity({ key, data: input.data });
+  const stored = draft.setEntity({ key, data: input.data });
   for (const id of nodeIds) {
     const node = draft.getNode(id);
     if (node !== undefined) draft.setNode({ ...node, entityKey: key });
@@ -118,7 +118,7 @@ export function rekeyEntity<TEntity, TRelationship>(
     // A rename to a fresh key keeps the entity graph isomorphic; the check is a cheap safeguard.
     // Every cycle through the new key enters it by a link into one of its occurrences.
     { nodeIds, entityKeys: [key], newLinks: nodeIds },
-    [{ type: "ENTITY_REKEYED", previousKey: input.key, key, previous: record.data, next: input.data, nodeIds }],
+    [{ type: "ENTITY_REKEYED", previousKey: input.key, key, previous: record.data, next: stored.data, nodeIds }],
     config,
     "rekeyEntity",
     input.context,

@@ -69,9 +69,9 @@ export function addNode<TEntity, TRelationship>(
     if (!identity.ok) return identity;
     entityKey = identity.value;
     if (!hasOwn(state.entities, entityKey)) {
-      draft.setEntity({ key: entityKey, data: input.entity });
+      const stored = draft.setEntity({ key: entityKey, data: input.entity });
       registered.push(entityKey);
-      events.push({ type: "ENTITY_REGISTERED", key: entityKey, entity: input.entity });
+      events.push({ type: "ENTITY_REGISTERED", key: entityKey, entity: stored.data });
     }
   }
 
@@ -273,11 +273,11 @@ export function updateRelationship<TEntity, TRelationship>(
     return failure(coreError("NODE_NOT_FOUND", `Node "${input.nodeId}" does not exist.`, { nodeId: input.nodeId }));
   }
   const draft = new Draft(state);
-  draft.setNode({ ...node, relationship: input.relationship });
+  const stored = draft.setNode({ ...node, relationship: input.relationship });
   return finish(
     draft,
     { nodeIds: [node.id] },
-    [{ type: "RELATIONSHIP_UPDATED", nodeId: node.id, previous: node.relationship, next: input.relationship }],
+    [{ type: "RELATIONSHIP_UPDATED", nodeId: node.id, previous: node.relationship, next: stored.relationship }],
     config,
     "updateRelationship",
     input.context,

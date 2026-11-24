@@ -107,27 +107,38 @@ describe("scale: 10k siblings under one parent", () => {
 // ---------------------------------------------------------------------------
 
 describe("findings", () => {
-  it.fails("F1: mutating a registered entity object in place bypasses rules and the registry key", () => {
+  it("F1: a registered entity or relationship cannot be mutated in place (frozen state)", () => {
     const cfg = config();
     const s = sample(cfg);
     const data = s.entities["L1"]?.data;
     if (data === undefined) throw new Error("fixture");
-    // The core stores the consumer object by reference and never freezes it.
-    // An in-place mutation changes the "immutable" state without any validation:
-    (data as { kind: string }).kind = "group"; // leaf(X) → group(L1) is denied by the rules
-    expect(validateStructure(s, cfg).valid).toBe(true); // fails: the state is now invalid
+    // The state is frozen: an in-place mutation throws instead of bypassing the rules.
+    expect(() => {
+      (data as { kind: string }).kind = "group"; // leaf(X) → group(L1) would be denied by the rules
+    }).toThrow(TypeError);
+    expect(() => {
+      (s.nodes["n2"]?.relationship as { share: number }).share = 99;
+    }).toThrow(TypeError);
+    expect(() => {
+      (s.nodes["n1"]?.childIds as string[]).push("n6");
+    }).toThrow(TypeError);
+    expect(Object.isFrozen(s) && Object.isFrozen(s.entities) && Object.isFrozen(s.nodes)).toBe(true);
+    expect(validateStructure(s, cfg).valid).toBe(true);
   });
 
-  it("F1 (evidence): the same in-place mutation also desynchronizes the registry key", () => {
+  it("F1: mutating the object the consumer passed in does not reach the state (shallow copy)", () => {
     const cfg = config();
     const entity = leaf("K");
+    const relationship = rel(10);
     const structure = createEntityStructure(cfg);
-    unwrap(structure.addNode({ entity, relationship: rel(0) }));
+    unwrap(structure.addNode({ entity, relationship }));
     const before = structure.getState();
-    entity.code = "K2";
-    expect(structure.getState()).toBe(before); // "unchanged" by reference...
-    expect(structure.findEntity("K")?.data.code).toBe("K2"); // ...but its content changed
-    expect(codes(structure.validateStructure().errors)).toEqual(["IDENTITY_MISMATCH"]);
+    entity.code = "K2"; // the consumer keeps a mutable object
+    relationship.share = 99;
+    expect(structure.getState()).toBe(before);
+    expect(structure.findEntity("K")?.data.code).toBe("K");
+    expect(Object.values(structure.getState().nodes)[0]?.relationship.share).toBe(10);
+    expect(structure.validateStructure().valid).toBe(true);
   });
 
   it.fails("F2: declarative matchers ignore inherited/getter properties that identity resolution does read", () => {

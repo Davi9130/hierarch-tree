@@ -56,3 +56,21 @@ export function insertAt<T>(list: readonly T[], index: number, value: T): T[] {
 export function without<T>(list: readonly T[], value: T): T[] {
   return list.filter((item) => item !== value);
 }
+
+/**
+ * Takes ownership of a consumer value before it enters the state (F1): plain
+ * objects and arrays are shallow-copied and frozen, so mutating the object the
+ * consumer passed in never changes the state; other objects (class instances)
+ * are frozen in place, because copying cannot preserve private fields or
+ * internal slots. Primitives and already-frozen values are returned as-is, so
+ * values that are already in the state keep their reference.
+ */
+export function ownValue<T>(value: T): T {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
+  if (Array.isArray(value)) return Object.freeze(value.slice()) as T;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return Object.freeze(value);
+  const copy = Object.create(prototype as object | null) as T;
+  Object.defineProperties(copy, Object.getOwnPropertyDescriptors(value));
+  return Object.freeze(copy);
+}

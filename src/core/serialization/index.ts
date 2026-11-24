@@ -1,6 +1,7 @@
 import { resolveConfig } from "../config.js";
 import { coreError, type CoreErrorCode } from "../errors.js";
 import { resolveIdentity } from "../identity.js";
+import { freezeState } from "../draft.js";
 import { hasOwn, patchRecord } from "../internal.js";
 import { collectSubtree, nodeSource, pathTo } from "../tree.js";
 import type {
@@ -187,11 +188,11 @@ export function importStructure<TEntity, TRelationship>(
     });
   });
 
-  const state: StructureState<TEntity, TRelationship> = {
+  const state: StructureState<TEntity, TRelationship> = freezeState({
     entities: patchRecord<EntityRecord<TEntity>>({}, entities),
     nodes: patchRecord<StructureNode<TRelationship>>({}, nodes),
     rootIds: snapshot.rootIds.slice(),
-  };
+  });
   const validation = validateStructure(state, config, { context: options.context });
   const getNode = nodeSource(state);
   for (const error of validation.errors) {
