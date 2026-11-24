@@ -34,6 +34,7 @@ structure.toTree();
 - [Arquitetura (ADR)](docs/architecture.md)
 - [API reference](docs/api-reference.md)
 - [Regras de relacionamento](docs/relationship-rules.md)
+- [Adapter Zod (`hierarch-tree/zod`)](docs/zod.md): validadores a partir de schemas Zod do consumidor (opcional)
 
 ## Desenvolvimento
 
