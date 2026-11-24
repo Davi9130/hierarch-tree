@@ -2,7 +2,7 @@
  * TES-29 — large/deep structures (no stack overflow) and probes for the
  * findings reported on the issue.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   addNode,
   createEmptyState,
@@ -167,19 +167,36 @@ describe("findings", () => {
     expect(getAllEntities(s).map((record) => record.key)).toEqual(["2", "10", "b", "a"]);
   });
 
-  it.fails("F4: a throwing subscriber makes a successful mutation look like a failure to the caller", () => {
-    const structure = createEntityStructure(config());
+  it("F4: a throwing subscriber does not turn a successful mutation into an exception", () => {
+    const reported: unknown[] = [];
+    const structure = createEntityStructure(config(), { onListenerError: (error) => reported.push(error) });
     structure.subscribe(() => {
       throw new Error("listener bug");
     });
-    let result: ReturnType<typeof structure.addNode> | undefined;
-    try {
-      result = structure.addNode({ entity: group("A"), relationship: rel(0) });
-    } catch {
-      // the caller gets an exception, but the state WAS committed
-    }
+    let later = 0;
+    structure.subscribe(() => {
+      later += 1;
+    });
+    const result = structure.addNode({ entity: group("A"), relationship: rel(0) }); // does not throw
     expect(structure.getState().rootIds).toHaveLength(1);
-    expect(result?.ok).toBe(true); // fails: the caller never receives the result
+    expect(result.ok).toBe(true);
+    expect(later).toBe(1); // the next listener still ran
+    expect(reported).toHaveLength(1);
+  });
+
+  it("F4: without onListenerError the listener error goes to console.error", () => {
+    const sink = (globalThis as unknown as { console: { error: (...data: unknown[]) => void } }).console;
+    const spy = vi.spyOn(sink, "error").mockImplementation(() => undefined);
+    try {
+      const structure = createEntityStructure(config());
+      structure.subscribe(() => {
+        throw new Error("listener bug");
+      });
+      expect(structure.addNode({ entity: group("A"), relationship: rel(0) }).ok).toBe(true);
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("F5 (evidence): config changes after first use are silently ignored (WeakMap cache)", () => {
