@@ -94,4 +94,5 @@ O core não depende de React, Zustand, Zod nem Immer. As travessias são iterati
 - **Transações com várias operações.** Como as operações são puras, dá para compô-las encadeando os resultados, mas ainda não existe um helper `transaction`.
 - **Consultas de compatibilidade** (`canRelate`, `getAllowedChildren`...) avaliam apenas as regras e o validador customizado, com `relationship` indefinido (a menos que seja informado). Elas não checam duplicidade nem ciclos.
 - **`createId` é chamado mesmo quando `addNode` acaba falhando** na validação, então os ids sequenciais nos testes podem pular números.
-- **Próximos PRs:** serialização versionada e histórico (TES-30); adapters Zustand, Zod e RHF (TES-31 a TES-33).
+- **Serialização e histórico (TES-30)** ficam em `src/core/serialization` e `src/core/history`, fora das operações. A importação monta o estado e o passa por `validateStructure`, então não existe um segundo validador. O que só existe no formato plano (ids e chaves repetidos, colisão depois da normalização) é checado antes. O histórico só acumula os `events` que as operações já devolvem e **não é auditoria**.
+- **Próximos PRs:** adapters Zustand, Zod e RHF (TES-31 a TES-33).
