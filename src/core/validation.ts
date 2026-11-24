@@ -123,10 +123,13 @@ function checkLinks<TEntity, TRelationship>(
         context,
       },
       resolved,
-      { nodeId: childId, path: errorPath(state, childId) },
+      { nodeId: childId },
     );
-    outcome.errors.push(...result.errors);
-    outcome.warnings.push(...result.warnings);
+    if (result.errors.length > 0 || result.warnings.length > 0) {
+      const path = errorPath(state, childId); // computed only when reporting
+      outcome.errors.push(...result.errors.map((issue) => ({ ...issue, path })));
+      outcome.warnings.push(...result.warnings.map((issue) => ({ ...issue, path })));
+    }
   }
 }
 
@@ -173,10 +176,11 @@ function runValidators<TEntity, TRelationship>(
         const result = verdictIssue(
           verdict,
           { code: "VALIDATION_FAILED", message: `Validation failed for node "${id}".`, category: "domain" },
-          { nodeId: id, entityKey: node.entityKey, path: errorPath(state, id) },
+          { nodeId: id, entityKey: node.entityKey },
         );
         if (result !== undefined) {
-          (result.severity === "warning" ? outcome.warnings : outcome.errors).push(result.issue);
+          const issue = { ...result.issue, path: errorPath(state, id) };
+          (result.severity === "warning" ? outcome.warnings : outcome.errors).push(issue);
         }
       }
     }
