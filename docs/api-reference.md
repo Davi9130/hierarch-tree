@@ -2,7 +2,7 @@
 
 Tudo é exportado por `hierarch-tree`. Os genéricos são `TEntity` (dados do cadastro) e `TRelationship` (metadados do vínculo de cada ocorrência).
 
-Adapters opcionais ficam em subpaths próprios e não fazem parte do core: [`hierarch-tree/zustand`](zustand.md).
+Adapters opcionais ficam em subpaths próprios e não fazem parte do core: [`hierarch-tree/zustand`](zustand.md), [`hierarch-tree/react-hook-form`](react-hook-form.md).
 
 - [Configuração](#configuração)
 - [Estado e resultados](#estado-e-resultados)
