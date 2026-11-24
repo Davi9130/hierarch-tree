@@ -3,7 +3,7 @@
 Adapter opcional que transforma **schemas Zod do consumidor** em validadores do pipeline do core e valida snapshots antes do `importStructure`.
 
 - O core não importa o adapter nem o `zod`: quem não usa o subpath `hierarch-tree/zod` não precisa ter o `zod` instalado.
-- `zod` é `peerDependency` **opcional** (`^4.0.0`). Aceita schemas do Zod 4 clássico (`zod`) e do `zod/mini`.
+- `zod` é `peerDependency` **opcional** (`^4.3.0`). A versão mínima é a 4.3.0 porque é a primeira que tem `.exactOptional()`, usado nos exemplos (fonte: os tarballs publicados no npm; `zod@4.2.1` não tem o método em `v4/classic/schemas.js`/`.d.ts`, `zod@4.3.0` tem, e a suíte de testes passa com `zod@4.3.0`). O adapter em si não chama `.exactOptional()`; se você não usa esse método, versões 4.x anteriores provavelmente funcionam, mas não são testadas nem suportadas. Aceita schemas do Zod 4 clássico (`zod`) e do `zod/mini`.
 - A biblioteca não traz nenhum schema de domínio. O exemplo PF/PJ abaixo está em `examples/corporate-zod.ts`.
 
 ```sh
