@@ -1,7 +1,7 @@
 import { resolveConfig, type ResolvedConfig } from "./config.js";
 import { CORE_ERROR_CODES, coreError, type ErrorCategory } from "./errors.js";
 import { resolveIdentity } from "./identity.js";
-import { getOwn, hasOwn } from "./internal.js";
+import { getOwn } from "./internal.js";
 import type {
   EntityKey,
   EntityMatcher,
@@ -21,13 +21,19 @@ export interface LinkOutcome {
   readonly warnings: ValidationWarning[];
 }
 
+/**
+ * Declarative matcher. Properties are read the same way `identity.key` reads
+ * them (a normal property access), so getters and inherited properties of
+ * class instances match too (F2). Expected values are primitives, so a
+ * prototype member such as `constructor` can never match by accident.
+ */
 function matches<TEntity>(matcher: EntityMatcher<TEntity> | undefined, entity: TEntity): boolean {
   if (matcher === undefined) return true;
   if (typeof matcher === "function") return matcher(entity);
   if (entity === null || typeof entity !== "object") return false;
   for (const property of Object.keys(matcher)) {
     const expected: unknown = (matcher as Record<string, unknown>)[property];
-    const actual = hasOwn(entity, property) ? (entity as Record<string, unknown>)[property] : undefined;
+    const actual: unknown = (entity as Record<string, unknown>)[property];
     const ok = Array.isArray(expected) ? expected.includes(actual) : expected === actual;
     if (!ok) return false;
   }

@@ -28,6 +28,8 @@ export const CORE_ERROR_CODES = {
   IDENTITY_CHANGE_REQUIRES_REKEY: "identity",
   ENTITY_NOT_FOUND: "identity",
   ENTITY_IN_USE: "identity",
+  // identity — warnings
+  ENTITY_DATA_IGNORED: "identity",
   // relationship
   RELATIONSHIP_DENIED: "relationship",
   RELATIONSHIP_NOT_ALLOWED: "relationship",
