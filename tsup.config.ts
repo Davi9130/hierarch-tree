@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: { index: "src/index.ts" },
+  entry: { index: "src/index.ts", zod: "src/adapters/zod/index.ts" },
   format: ["esm"],
   // Declarations are emitted by `tsc -p tsconfig.build.json` (TypeScript 7 has no compiler API for dts bundlers).
   dts: false,

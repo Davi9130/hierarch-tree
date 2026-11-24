@@ -13,6 +13,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./zod": {
+      "types": "./dist/adapters/zod/index.d.ts",
+      "import": "./dist/zod.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -37,9 +41,18 @@
     "relationships",
     "typescript"
   ],
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "zod": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "tsup": "^9.0.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.1.1"
+    "vitest": "^5.1.1",
+    "zod": "^4.6.7"
   }
 }
