@@ -2,6 +2,8 @@
 
 Tudo é exportado por `hierarch-tree`. Os genéricos são `TEntity` (dados do cadastro) e `TRelationship` (metadados do vínculo de cada ocorrência).
 
+Adapters opcionais ficam em subpaths próprios e não fazem parte do core: [`hierarch-tree/zustand`](zustand.md).
+
 - [Configuração](#configuração)
 - [Estado e resultados](#estado-e-resultados)
 - [Operações puras](#operações-puras)
