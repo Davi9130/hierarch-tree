@@ -28,7 +28,7 @@ const partySchema = z.object({
 
 const shareholdingSchema = z.object({
   percentage: z.number().min(0).max(100),
-  role: z.string().optional(),
+  role: z.string().exactOptional(), // `role?: string` com exactOptionalPropertyTypes; veja examples.md
 });
 
 const config: EntityStructureConfig<Party, Shareholding> = {
