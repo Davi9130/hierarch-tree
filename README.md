@@ -20,7 +20,12 @@ pnpm add zustand          # hierarch-tree/zustand
 pnpm add react react-hook-form  # hierarch-tree/react-hook-form
 ```
 
-Também dá para instalar direto do GitHub (o script `prepare` gera o `dist/`): `pnpm add github:Davi9130/hierarch-tree`.
+Também dá para instalar direto do GitHub: `pnpm add github:Davi9130/hierarch-tree`. O script `prepare` gera o `dist/` na instalação, então o `pnpm` precisa estar disponível na máquina (vale também para `npm i github:...`). No pnpm 10, que não roda scripts de dependências por padrão, libere o pacote antes no `pnpm-workspace.yaml` do seu projeto:
+
+```yaml
+onlyBuiltDependencies:
+  - hierarch-tree
+```
 
 ## Uso
 
