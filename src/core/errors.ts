@@ -15,6 +15,10 @@ export const CORE_ERROR_CODES = {
   IDENTITY_CYCLE: "structure",
   DANGLING_REFERENCE: "structure",
   INCONSISTENT_LINK: "structure",
+  // structure — snapshots (importStructure)
+  SNAPSHOT_INVALID_FORMAT: "structure",
+  SNAPSHOT_UNSUPPORTED_VERSION: "structure",
+  SNAPSHOT_MIGRATION_FAILED: "structure",
   // identity
   IDENTITY_MISSING: "identity",
   IDENTITY_INVALID: "identity",
