@@ -115,7 +115,9 @@ export function rekeyEntity<TEntity, TRelationship>(
   }
   return finish(
     draft,
-    { nodeIds, entityKeys: [key] },
+    // A rename to a fresh key keeps the entity graph isomorphic; the check is a cheap safeguard.
+    // Every cycle through the new key enters it by a link into one of its occurrences.
+    { nodeIds, entityKeys: [key], newLinks: nodeIds },
     [{ type: "ENTITY_REKEYED", previousKey: input.key, key, previous: record.data, next: input.data, nodeIds }],
     config,
     "rekeyEntity",

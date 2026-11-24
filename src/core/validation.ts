@@ -24,6 +24,13 @@ export interface ChangeScope {
   readonly nodeIds: Iterable<NodeId>;
   /** Registry records that were created or changed. */
   readonly entityKeys?: Iterable<EntityKey>;
+  /**
+   * Child node of every parent → child link the operation created or re-pointed
+   * (add, move, reparent, rekey). Identity cycles are only searched through
+   * these links; `"all"` checks the whole entity graph (`validateStructure`).
+   * Omitted = the operation created no link, so no cycle can appear.
+   */
+  readonly newLinks?: Iterable<NodeId> | "all";
 }
 
 export interface PipelineOutcome {
@@ -56,8 +63,9 @@ export function validateChange<TEntity, TRelationship>(
   // 1. Structure
   checkReferences(state, dirty, outcome);
   checkDepth(state, dirty, resolved, outcome);
-  if (resolved.identityCycles === "deny" && dirty.length > 0) {
-    checkIdentityCycles(state, dirty, outcome);
+  if (resolved.identityCycles === "deny" && scope.newLinks !== undefined) {
+    if (scope.newLinks === "all") checkAllIdentityCycles(state, dirty, outcome);
+    else checkNewLinkCycles(state, scope.newLinks, outcome);
   }
   if (outcome.errors.length > 0) return outcome;
 
@@ -205,7 +213,7 @@ export function validateStructure<TEntity, TRelationship>(
   if (integrity.length > 0) return { valid: false, errors: integrity, warnings: [] };
   const outcome = validateChange(
     state,
-    { nodeIds: Object.keys(state.nodes), entityKeys: Object.keys(state.entities) },
+    { nodeIds: Object.keys(state.nodes), entityKeys: Object.keys(state.entities), newLinks: "all" },
     config,
     "validateStructure",
     options.context,
@@ -399,10 +407,92 @@ function checkDepth<TEntity, TRelationship>(
 }
 
 /**
- * Detects a cycle in the entity graph (parent identity → child identity across
- * every occurrence), e.g. X → Y → X through different occurrences. Iterative DFS.
+ * Incremental identity-cycle check. The state before the operation had an
+ * acyclic entity graph, so a cycle can only go through a link the operation
+ * created: link P → C closes a cycle iff P is reachable from C. One iterative
+ * DFS per distinct child entity, walking only what is reachable from it.
  */
-function checkIdentityCycles<TEntity, TRelationship>(
+function checkNewLinkCycles<TEntity, TRelationship>(
+  state: StructureState<TEntity, TRelationship>,
+  newLinks: Iterable<NodeId>,
+  outcome: PipelineOutcome,
+): void {
+  const getNode = nodeSource(state);
+  // child entity → (parent entity → child node of the first such new link)
+  const starts = new Map<EntityKey, Map<EntityKey, NodeId>>();
+  for (const id of new Set(newLinks)) {
+    const node = getNode(id);
+    const parent = node?.parentId == null ? undefined : getNode(node.parentId);
+    if (node === undefined || parent === undefined) continue;
+    if (parent.entityKey === node.entityKey) {
+      reportIdentityCycle(state, [node.entityKey], id, outcome);
+      return;
+    }
+    let parents = starts.get(node.entityKey);
+    if (parents === undefined) {
+      parents = new Map();
+      starts.set(node.entityKey, parents);
+    }
+    if (!parents.has(parent.entityKey)) parents.set(parent.entityKey, id);
+  }
+  if (starts.size === 0) return;
+
+  const occurrences = new Map<EntityKey, NodeId[]>();
+  for (const node of Object.values(state.nodes)) {
+    if (node.childIds.length === 0) continue; // only occurrences with outgoing links matter
+    const list = occurrences.get(node.entityKey);
+    if (list === undefined) occurrences.set(node.entityKey, [node.id]);
+    else list.push(node.id);
+  }
+
+  for (const [start, parents] of starts) {
+    const previous = new Map<EntityKey, EntityKey | null>([[start, null]]);
+    const stack: EntityKey[] = [start];
+    while (stack.length > 0) {
+      const key = stack.pop();
+      if (key === undefined) break;
+      for (const occurrenceId of occurrences.get(key) ?? []) {
+        for (const childId of getNode(occurrenceId)?.childIds ?? []) {
+          const childKey = getNode(childId)?.entityKey;
+          if (childKey === undefined || previous.has(childKey)) continue;
+          previous.set(childKey, key);
+          const linkNode = parents.get(childKey);
+          if (linkNode !== undefined) {
+            const cycle: EntityKey[] = [];
+            for (let at: EntityKey | null | undefined = childKey; at != null; at = previous.get(at)) cycle.push(at);
+            reportIdentityCycle(state, cycle.reverse(), linkNode, outcome);
+            return;
+          }
+          stack.push(childKey);
+        }
+      }
+    }
+  }
+}
+
+/** `cycle` starts at the child of the offending link and ends at its parent. */
+function reportIdentityCycle<TEntity, TRelationship>(
+  state: StructureState<TEntity, TRelationship>,
+  cycle: readonly EntityKey[],
+  nodeId: NodeId,
+  outcome: PipelineOutcome,
+): void {
+  const shown = [...cycle, cycle[0] ?? ""];
+  outcome.errors.push(
+    coreError("IDENTITY_CYCLE", `Identity cycle: ${shown.join(" → ")}.`, {
+      nodeId,
+      path: errorPath(state, nodeId),
+      details: { cycle: shown },
+    }),
+  );
+}
+
+/**
+ * Full check of the entity graph (parent identity → child identity across
+ * every occurrence), e.g. X → Y → X through different occurrences. Used by
+ * `validateStructure`, where the state comes from outside. Iterative DFS.
+ */
+function checkAllIdentityCycles<TEntity, TRelationship>(
   state: StructureState<TEntity, TRelationship>,
   dirty: readonly StructureNode<TRelationship>[],
   outcome: PipelineOutcome,

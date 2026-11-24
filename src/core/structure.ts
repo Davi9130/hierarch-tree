@@ -93,7 +93,9 @@ export function addNode<TEntity, TRelationship>(
 
   return finish(
     draft,
-    { nodeIds: [nodeId], entityKeys: registered },
+    // An entity registered by this very call has no other occurrence, so the
+    // new link cannot close an identity cycle and needs no cycle search.
+    { nodeIds: [nodeId], entityKeys: registered, ...(registered.length > 0 ? {} : { newLinks: [nodeId] }) },
     events,
     config,
     "addNode",
@@ -176,7 +178,16 @@ export function removeNode<TEntity, TRelationship>(
   if (resolveConfig(config).entityRemoval === "when-unreferenced") {
     collectUnreferenced(draft, events);
   }
-  return finish(draft, { nodeIds: dirty }, events, config, "removeNode", input.context, {});
+  const newLinks = (input.children ?? "cascade") === "cascade" ? undefined : node.childIds;
+  return finish(
+    draft,
+    { nodeIds: dirty, ...(newLinks === undefined ? {} : { newLinks }) },
+    events,
+    config,
+    "removeNode",
+    input.context,
+    {},
+  );
 }
 
 export type MoveNodeInput = OperationContext & {
@@ -230,7 +241,7 @@ export function moveNode<TEntity, TRelationship>(
   if (target !== null) dirty.push(target);
   return finish(
     draft,
-    { nodeIds: dirty },
+    { nodeIds: dirty, newLinks: [node.id] },
     [
       {
         type: "NODE_MOVED",
