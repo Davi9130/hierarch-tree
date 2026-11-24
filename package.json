@@ -13,6 +13,9 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./zod": {
+      "types": "./dist/adapters/zod/index.d.ts",
+      "import": "./dist/zod.js"
     "./zustand": {
       "types": "./dist/adapters/zustand/index.d.ts",
       "import": "./dist/zustand.js"
@@ -42,6 +45,10 @@
     "typescript"
   ],
   "peerDependencies": {
+    "zod": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "zod": {
     "zustand": ">=5.0.0"
   },
   "peerDependenciesMeta": {
@@ -53,6 +60,7 @@
     "tsup": "^9.0.0",
     "typescript": "^7.0.2",
     "vitest": "^5.1.1",
+    "zod": "^4.6.7"
     "zustand": "^5.1.0"
   }
 }
