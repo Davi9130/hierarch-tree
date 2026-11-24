@@ -37,6 +37,7 @@ structure.toTree();
 - [Adapter Zod (`hierarch-tree/zod`)](docs/zod.md): validadores a partir de schemas Zod do consumidor (opcional)
 - [Adapter Zustand](docs/zustand.md) (`hierarch-tree/zustand`, `zustand` como peerDependency opcional)
 - [Adapter React Hook Form](docs/react-hook-form.md) (`hierarch-tree/react-hook-form`, `react` e `react-hook-form` como peerDependencies opcionais): o form guarda o estado normalizado do core, sem segunda fonte de verdade
+- [Exemplos](docs/examples.md): PF/PJ e o fluxo ponta a ponta snapshot → Zod → Zustand / RHF
 
 ## Desenvolvimento
 
