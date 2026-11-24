@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "description": "Generic, domain-agnostic core for multi-level entity structures: configurable identity, occurrences, relationship rules and validation.",
   "license": "MIT",
+  "author": "Davi da Costa",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Davi9130/hierarch-tree.git"
+  },
+  "homepage": "https://github.com/Davi9130/hierarch-tree#readme",
+  "bugs": {
+    "url": "https://github.com/Davi9130/hierarch-tree/issues"
+  },
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -29,7 +38,9 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=18"
@@ -39,21 +50,29 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "pnpm typecheck && pnpm test && pnpm build"
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "prepare": "pnpm build",
+    "prepublishOnly": "pnpm check"
   },
   "keywords": [
     "tree",
     "hierarchy",
+    "hierarchical",
     "entity",
     "structure",
     "relationships",
+    "org-chart",
+    "ownership-structure",
+    "validation",
     "typescript",
+    "zod",
+    "zustand",
     "react-hook-form"
   ],
   "peerDependencies": {
     "react": ">=18.0.0",
     "react-hook-form": "^7.92.0",
-    "zod": "^4.0.0",
+    "zod": "^4.3.0",
     "zustand": ">=5.0.0"
   },
   "peerDependenciesMeta": {
