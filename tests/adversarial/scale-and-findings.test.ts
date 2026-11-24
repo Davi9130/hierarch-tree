@@ -141,7 +141,7 @@ describe("findings", () => {
     expect(structure.validateStructure().valid).toBe(true);
   });
 
-  it.fails("F2: declarative matchers ignore inherited/getter properties that identity resolution does read", () => {
+  it("F2: declarative matchers read inherited/getter properties the same way identity resolution does", () => {
     class Member {
       constructor(private readonly raw: { code: string; kind: "group" | "leaf" }) {}
       get code(): string {
@@ -155,7 +155,7 @@ describe("findings", () => {
     let s = createEmptyState<Member, { share: number }>();
     s = unwrap(addNode(s, { entity: new Member({ code: "G", kind: "group" }), relationship: rel(0) }, cfg)).state;
     expect(s.entities["G"]).toBeDefined(); // identity read through the getter works
-    // `group-any` should match parent.kind === "group", but `matches` uses hasOwn → no rule → restrictive deny.
+    // `group-any` matches parent.kind === "group" read through the getter.
     const added = addNode(s, { entity: new Member({ code: "L", kind: "leaf" }), parentId: "n1", relationship: rel(0) }, cfg);
     expect(added.ok).toBe(true);
   });
