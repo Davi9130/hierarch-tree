@@ -34,6 +34,7 @@ structure.toTree();
 - [Arquitetura (ADR)](docs/architecture.md)
 - [API reference](docs/api-reference.md)
 - [Regras de relacionamento](docs/relationship-rules.md)
+- [Adapter Zustand](docs/zustand.md) (`hierarch-tree/zustand`, `zustand` como peerDependency opcional)
 
 ## Desenvolvimento
 
