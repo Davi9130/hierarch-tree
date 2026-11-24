@@ -46,7 +46,7 @@ export type AddNodeInput<TEntity, TRelationship> = OperationContext & {
  */
 export function addNode<TEntity, TRelationship>(
   state: StructureState<TEntity, TRelationship>,
-  input: AddNodeInput<TEntity, TRelationship>,
+  input: NoInfer<AddNodeInput<TEntity, TRelationship>>,
   config: EntityStructureConfig<TEntity, TRelationship>,
 ): OperationResult<TEntity, TRelationship, { nodeId: NodeId; entityKey: EntityKey }> {
   const resolved = resolveConfig(config);
@@ -254,7 +254,7 @@ export type UpdateRelationshipInput<TRelationship> = OperationContext & {
 /** Replaces the relationship metadata of one occurrence. */
 export function updateRelationship<TEntity, TRelationship>(
   state: StructureState<TEntity, TRelationship>,
-  input: UpdateRelationshipInput<TRelationship>,
+  input: NoInfer<UpdateRelationshipInput<TRelationship>>,
   config: EntityStructureConfig<TEntity, TRelationship>,
 ): OperationResult<TEntity, TRelationship> {
   const node = getOwn(state.nodes, input.nodeId);

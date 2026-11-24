@@ -1,17 +1,21 @@
 import { resolveConfig, type ResolvedConfig } from "./config.js";
 import { coreError } from "./errors.js";
 import { resolveIdentity } from "./identity.js";
-import { getOwn } from "./internal.js";
-import { nodeSource, pathTo } from "./tree.js";
+import { getOwn, hasOwn } from "./internal.js";
+import { evaluateLink, verdictIssue } from "./rules.js";
+import { collectSubtree, nodeSource, pathTo } from "./tree.js";
 import type {
   EntityKey,
   EntityStructureConfig,
   NodeId,
+  NodeView,
   OperationName,
   StructureNode,
   StructureState,
   ValidationError,
+  ValidationResult,
   ValidationWarning,
+  Verdict,
 } from "./types.js";
 
 /** What an operation touched; the pipeline validates exactly this scope. */
@@ -37,8 +41,8 @@ export function validateChange<TEntity, TRelationship>(
   state: StructureState<TEntity, TRelationship>,
   scope: ChangeScope,
   config: EntityStructureConfig<TEntity, TRelationship>,
-  _operation: OperationName | "validateStructure",
-  _context: unknown,
+  operation: OperationName | "validateStructure",
+  context: unknown,
 ): PipelineOutcome {
   const resolved = resolveConfig(config);
   const getNode = nodeSource(state);
@@ -77,8 +81,212 @@ export function validateChange<TEntity, TRelationship>(
 
   // 3. Relationships
   if (resolved.siblingDuplicates === "deny") checkSiblingDuplicates(state, dirty, outcome);
+  checkLinks(state, dirty, resolved, operation, context, outcome);
+
+  // 4. Consumer validators
+  if (resolved.validators.length > 0) runValidators(state, dirty, resolved, operation, context, outcome);
 
   return outcome;
+}
+
+/** Re-evaluates the rules for every link into and out of the touched nodes. */
+function checkLinks<TEntity, TRelationship>(
+  state: StructureState<TEntity, TRelationship>,
+  dirty: readonly StructureNode<TRelationship>[],
+  resolved: ResolvedConfig<TEntity, TRelationship>,
+  operation: OperationName | "validateStructure",
+  context: unknown,
+  outcome: PipelineOutcome,
+): void {
+  const getNode = nodeSource(state);
+  const links = new Set<NodeId>(); // identified by the child node
+  for (const node of dirty) {
+    if (node.parentId !== null) links.add(node.id);
+    for (const childId of node.childIds) links.add(childId);
+  }
+  for (const childId of links) {
+    const childNode = getNode(childId);
+    const parentNode = childNode?.parentId == null ? undefined : getNode(childNode.parentId);
+    if (childNode === undefined || parentNode === undefined) continue;
+    const parent = getOwn(state.entities, parentNode.entityKey);
+    const child = getOwn(state.entities, childNode.entityKey);
+    if (parent === undefined || child === undefined) continue;
+    const result = evaluateLink(
+      {
+        parent,
+        child,
+        parentNode,
+        childNode,
+        relationship: childNode.relationship,
+        operation,
+        state,
+        context,
+      },
+      resolved,
+      { nodeId: childId, path: errorPath(state, childId) },
+    );
+    outcome.errors.push(...result.errors);
+    outcome.warnings.push(...result.warnings);
+  }
+}
+
+function view<TEntity, TRelationship>(
+  state: StructureState<TEntity, TRelationship>,
+  node: StructureNode<TRelationship>,
+): NodeView<TEntity, TRelationship> | undefined {
+  const record = getOwn(state.entities, node.entityKey);
+  return record === undefined ? undefined : { ...node, entity: record.data };
+}
+
+/** Runs consumer validators on each touched node and on its parent. */
+function runValidators<TEntity, TRelationship>(
+  state: StructureState<TEntity, TRelationship>,
+  dirty: readonly StructureNode<TRelationship>[],
+  resolved: ResolvedConfig<TEntity, TRelationship>,
+  operation: OperationName | "validateStructure",
+  context: unknown,
+  outcome: PipelineOutcome,
+): void {
+  const getNode = nodeSource(state);
+  const targets = new Set<NodeId>();
+  for (const node of dirty) {
+    targets.add(node.id);
+    if (node.parentId !== null) targets.add(node.parentId);
+  }
+  for (const id of targets) {
+    const node = getNode(id);
+    const nodeView = node === undefined ? undefined : view(state, node);
+    if (node === undefined || nodeView === undefined) continue;
+    const parentNode = node.parentId === null ? undefined : getNode(node.parentId);
+    const parent = parentNode === undefined ? null : (view(state, parentNode) ?? null);
+    const children: NodeView<TEntity, TRelationship>[] = [];
+    for (const childId of node.childIds) {
+      const childNode = getNode(childId);
+      const childView = childNode === undefined ? undefined : view(state, childNode);
+      if (childView !== undefined) children.push(childView);
+    }
+    const validatorContext = { node: nodeView, parent, children, state, operation, context };
+    for (const validator of resolved.validators) {
+      const returned = validator(validatorContext);
+      const verdicts: readonly Verdict[] = isVerdictList(returned) ? returned : [returned];
+      for (const verdict of verdicts) {
+        const result = verdictIssue(
+          verdict,
+          { code: "VALIDATION_FAILED", message: `Validation failed for node "${id}".`, category: "domain" },
+          { nodeId: id, entityKey: node.entityKey, path: errorPath(state, id) },
+        );
+        if (result !== undefined) {
+          (result.severity === "warning" ? outcome.warnings : outcome.errors).push(result.issue);
+        }
+      }
+    }
+  }
+}
+
+function isVerdictList(value: Verdict | readonly Verdict[]): value is readonly Verdict[] {
+  return Array.isArray(value);
+}
+
+/**
+ * Full validation of a state: referential integrity first (dangling
+ * references, inconsistent parent/child links, unreachable nodes, registry
+ * keys), then the complete pipeline over every node and entity.
+ */
+export function validateStructure<TEntity, TRelationship>(
+  state: StructureState<TEntity, TRelationship>,
+  config: EntityStructureConfig<TEntity, TRelationship>,
+  options: { readonly context?: unknown } = {},
+): ValidationResult {
+  const integrity = checkIntegrity(state);
+  if (integrity.length > 0) return { valid: false, errors: integrity, warnings: [] };
+  const outcome = validateChange(
+    state,
+    { nodeIds: Object.keys(state.nodes), entityKeys: Object.keys(state.entities) },
+    config,
+    "validateStructure",
+    options.context,
+  );
+  return { valid: outcome.errors.length === 0, ...outcome };
+}
+
+function checkIntegrity<TEntity, TRelationship>(
+  state: StructureState<TEntity, TRelationship>,
+): ValidationError[] {
+  const errors: ValidationError[] = [];
+  const getNode = nodeSource(state);
+  const inconsistent = (message: string, nodeId?: NodeId): void => {
+    errors.push(coreError("INCONSISTENT_LINK", message, nodeId === undefined ? {} : { nodeId }));
+  };
+
+  for (const [key, record] of Object.entries(state.entities)) {
+    if (record.key !== key) {
+      errors.push(
+        coreError("IDENTITY_MISMATCH", `Registry entry "${key}" holds a record keyed "${record.key}".`, {
+          entityKey: key,
+        }),
+      );
+    }
+  }
+
+  const seenRoots = new Set<NodeId>();
+  for (const rootId of state.rootIds) {
+    const root = getNode(rootId);
+    if (seenRoots.has(rootId)) inconsistent(`Root "${rootId}" is listed twice.`, rootId);
+    seenRoots.add(rootId);
+    if (root === undefined) {
+      errors.push(coreError("DANGLING_REFERENCE", `Root "${rootId}" does not exist.`, { nodeId: rootId }));
+    } else if (root.parentId !== null) {
+      inconsistent(`Root "${rootId}" has parent "${root.parentId}".`, rootId);
+    }
+  }
+
+  for (const [id, node] of Object.entries(state.nodes)) {
+    if (node.id !== id) inconsistent(`Node stored as "${id}" has id "${node.id}".`, id);
+    if (!hasOwn(state.entities, node.entityKey)) {
+      errors.push(
+        coreError("DANGLING_REFERENCE", `Node "${id}" references unknown entity "${node.entityKey}".`, {
+          nodeId: id,
+          entityKey: node.entityKey,
+        }),
+      );
+    }
+    if (node.parentId === null) {
+      if (!seenRoots.has(id)) inconsistent(`Node "${id}" has no parent but is not a root.`, id);
+    } else {
+      const parent = getNode(node.parentId);
+      if (parent === undefined) {
+        errors.push(
+          coreError("DANGLING_REFERENCE", `Node "${id}" references unknown parent "${node.parentId}".`, {
+            nodeId: id,
+          }),
+        );
+      } else if (!parent.childIds.includes(id)) {
+        inconsistent(`Node "${id}" is missing from the children of "${node.parentId}".`, id);
+      }
+    }
+    const seenChildren = new Set<NodeId>();
+    for (const childId of node.childIds) {
+      if (seenChildren.has(childId)) inconsistent(`Child "${childId}" is listed twice in "${id}".`, id);
+      seenChildren.add(childId);
+      const child = getNode(childId);
+      if (child === undefined) {
+        errors.push(coreError("DANGLING_REFERENCE", `Node "${id}" lists unknown child "${childId}".`, { nodeId: id }));
+      } else if (child.parentId !== id) {
+        inconsistent(`Child "${childId}" of "${id}" points to parent "${String(child.parentId)}".`, childId);
+      }
+    }
+  }
+  if (errors.length > 0) return errors;
+
+  // Every node must be reachable from the roots exactly once (also catches parent cycles).
+  const reached = new Set<NodeId>();
+  for (const rootId of state.rootIds) {
+    for (const id of collectSubtree(getNode, rootId)) reached.add(id);
+  }
+  for (const id of Object.keys(state.nodes)) {
+    if (!reached.has(id)) inconsistent(`Node "${id}" is not reachable from any root.`, id);
+  }
+  return errors;
 }
 
 function errorPath<TEntity, TRelationship>(

@@ -43,7 +43,7 @@ export type UpdateEntityInput<TEntity> = OperationContext & {
  */
 export function updateEntity<TEntity, TRelationship>(
   state: StructureState<TEntity, TRelationship>,
-  input: UpdateEntityInput<TEntity>,
+  input: NoInfer<UpdateEntityInput<TEntity>>,
   config: EntityStructureConfig<TEntity, TRelationship>,
 ): OperationResult<TEntity, TRelationship> {
   const record = getOwn(state.entities, input.key);
@@ -85,7 +85,7 @@ export type RekeyEntityInput<TEntity> = OperationContext & {
  */
 export function rekeyEntity<TEntity, TRelationship>(
   state: StructureState<TEntity, TRelationship>,
-  input: RekeyEntityInput<TEntity>,
+  input: NoInfer<RekeyEntityInput<TEntity>>,
   config: EntityStructureConfig<TEntity, TRelationship>,
 ): OperationResult<TEntity, TRelationship, { key: EntityKey }> {
   const record = getOwn(state.entities, input.key);

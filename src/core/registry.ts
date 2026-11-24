@@ -50,7 +50,7 @@ export function findByIdentity<TEntity, TRelationship>(
  */
 export function registerEntity<TEntity, TRelationship>(
   state: StructureState<TEntity, TRelationship>,
-  entity: TEntity,
+  entity: NoInfer<TEntity>,
   config: EntityStructureConfig<TEntity, TRelationship>,
 ): OperationResult<TEntity, TRelationship, { key: EntityKey }> {
   const identity = resolveIdentity(entity, config);
