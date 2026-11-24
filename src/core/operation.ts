@@ -7,6 +7,7 @@ import type {
   OperationResult,
   StructureEvent,
   ValidationError,
+  ValidationWarning,
 } from "./types.js";
 
 /** Builds the candidate state, runs the pipeline and returns the result. */
@@ -18,11 +19,12 @@ export function finish<TEntity, TRelationship, TExtra extends object>(
   operation: OperationName,
   context: unknown,
   extra: TExtra,
+  operationWarnings: readonly ValidationWarning[] = [],
 ): OperationResult<TEntity, TRelationship, TExtra> {
   const state = draft.build();
   const { errors, warnings } = validateChange(state, scope, config, operation, context);
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, value: { ...extra, state, events, warnings } };
+  return { ok: true, value: { ...extra, state, events, warnings: [...operationWarnings, ...warnings] } };
 }
 
 export function failure(...errors: ValidationError[]): { ok: false; errors: readonly ValidationError[] } {

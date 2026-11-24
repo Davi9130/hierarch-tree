@@ -74,3 +74,20 @@ export function ownValue<T>(value: T): T {
   Object.defineProperties(copy, Object.getOwnPropertyDescriptors(value));
   return Object.freeze(copy);
 }
+
+/**
+ * Same reference, or same prototype and the same own enumerable properties
+ * compared with `Object.is` (one level deep).
+ */
+export function shallowEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+  if (Object.getPrototypeOf(a) !== Object.getPrototypeOf(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const key of keys) {
+    if (!hasOwnProperty.call(b, key)) return false;
+    if (!Object.is((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) return false;
+  }
+  return true;
+}

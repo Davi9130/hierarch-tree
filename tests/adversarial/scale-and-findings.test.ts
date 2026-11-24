@@ -200,12 +200,16 @@ describe("findings", () => {
     expect(Object.keys(padded.state.entities)).toEqual(["ABC", " ABC "]);
   });
 
-  it("decision 2 (evidence): addNode with an existing identity drops the differing input data without a warning", () => {
+  it("decision 2: addNode with an existing identity keeps the registered data and warns ENTITY_DATA_IGNORED", () => {
     const cfg = config();
     const s = sample(cfg);
     const result = unwrap(addNode(s, { entity: leaf("X", "NEW LABEL"), parentId: "n6", relationship: rel(0) }, cfg));
     expect(result.state.entities["X"]?.data.label).toBeUndefined();
-    expect(result.warnings).toEqual([]);
+    expect(codes(result.warnings)).toEqual(["ENTITY_DATA_IGNORED"]);
+    expect(result.warnings[0]?.entityKey).toBe("X");
+    // Equal data (a fresh but identical object) is not reported.
+    const same = unwrap(addNode(s, { entity: leaf("X"), parentId: "n6", relationship: rel(0) }, cfg));
+    expect(same.warnings).toEqual([]);
   });
 
   it("decision 3 (evidence): root links are never checked by rules or the relationship predicate", () => {

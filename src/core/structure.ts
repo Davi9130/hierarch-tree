@@ -2,7 +2,7 @@ import { resolveConfig } from "./config.js";
 import { Draft } from "./draft.js";
 import { coreError } from "./errors.js";
 import { resolveIdentity } from "./identity.js";
-import { getOwn, hasOwn, insertAt, without } from "./internal.js";
+import { getOwn, hasOwn, insertAt, shallowEqual, without } from "./internal.js";
 import { failure, finish, resolveIndex } from "./operation.js";
 import { collectSubtree, isSelfOrAncestor, nodeSource } from "./tree.js";
 import type {
@@ -13,6 +13,7 @@ import type {
   StructureEvent,
   StructureNode,
   StructureState,
+  ValidationWarning,
 } from "./types.js";
 
 interface OperationContext {
@@ -42,7 +43,8 @@ export type AddNodeInput<TEntity, TRelationship> = OperationContext & {
 /**
  * Adds an occurrence of an entity. When `entity` is given and its identity
  * already exists, the central record is reused unchanged (use `updateEntity`
- * to change its data).
+ * to change its data); if the given data differs from the registered data
+ * (shallow comparison), the result carries an `ENTITY_DATA_IGNORED` warning.
  */
 export function addNode<TEntity, TRelationship>(
   state: StructureState<TEntity, TRelationship>,
@@ -59,6 +61,7 @@ export function addNode<TEntity, TRelationship>(
 
   let entityKey: EntityKey;
   const registered: EntityKey[] = [];
+  const warnings: ValidationWarning[] = [];
   if (input.entityKey !== undefined) {
     entityKey = input.entityKey;
     if (!hasOwn(state.entities, entityKey)) {
@@ -72,6 +75,17 @@ export function addNode<TEntity, TRelationship>(
       const stored = draft.setEntity({ key: entityKey, data: input.entity });
       registered.push(entityKey);
       events.push({ type: "ENTITY_REGISTERED", key: entityKey, entity: stored.data });
+    } else {
+      const existing = getOwn(state.entities, entityKey);
+      if (existing !== undefined && !shallowEqual(existing.data, input.entity)) {
+        warnings.push(
+          coreError(
+            "ENTITY_DATA_IGNORED",
+            `Entity "${entityKey}" is already registered; the given data was ignored (use updateEntity to change it).`,
+            { entityKey },
+          ),
+        );
+      }
     }
   }
 
@@ -101,6 +115,7 @@ export function addNode<TEntity, TRelationship>(
     "addNode",
     input.context,
     { nodeId, entityKey },
+    warnings,
   );
 }
 
