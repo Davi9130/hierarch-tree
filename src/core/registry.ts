@@ -1,6 +1,8 @@
 import { coreError } from "./errors.js";
 import { resolveIdentity, normalizeIdentity } from "./identity.js";
-import { getOwn, hasOwn, patchRecord } from "./internal.js";
+import { Draft } from "./draft.js";
+import { getOwn, hasOwn } from "./internal.js";
+import { finish } from "./operation.js";
 import type {
   EntityKey,
   EntityRecord,
@@ -66,17 +68,15 @@ export function registerEntity<TEntity, TRelationship>(
       ],
     };
   }
-  const record: EntityRecord<TEntity> = { key, data: entity };
-  return {
-    ok: true,
-    value: {
-      key,
-      state: {
-        ...state,
-        entities: patchRecord(state.entities, new Map([[key, record]])),
-      },
-      events: [{ type: "ENTITY_REGISTERED", key, entity }],
-      warnings: [],
-    },
-  };
+  const draft = new Draft(state);
+  draft.setEntity({ key, data: entity });
+  return finish(
+    draft,
+    { nodeIds: [], entityKeys: [key] },
+    [{ type: "ENTITY_REGISTERED", key, entity }],
+    config,
+    "registerEntity",
+    undefined,
+    { key },
+  );
 }
