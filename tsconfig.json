@@ -16,7 +16,8 @@
     "skipLibCheck": true,
     "declaration": true,
     "noEmit": true,
-    "types": []
+    "types": [],
+    "jsx": "react-jsx"
   },
   "include": ["src", "tests", "examples"]
 }
